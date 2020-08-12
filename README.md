@@ -26,9 +26,13 @@ Allowed read formats: "avro", "parquet", txt", "ctl", "dat"
 
 Importing
 > import sys 
+>
+>
 > sys.path.insert(0, '/path/workspace/utils/')
+>
 > 
 > from HDFSUtils import HDFSUtils
+>
 > from DataFrameUtils import DataFrameUtils
 
 For examples checking the utils.ipynb notebook 
