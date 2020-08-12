@@ -1,2 +1,2 @@
 # pyspark_utils
-Utilitario desarrollado a través de PySpark
+Utils developed in PySpark
