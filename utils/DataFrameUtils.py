@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Iterator
 from pyspark.sql import DataFrame
 
 import re
@@ -29,13 +29,14 @@ class DataFrameUtils(HDFSUtils):
         super().__init__(**kwargs)
 
     @staticmethod
-    def __extract_extension(files: List[str]) -> str:
+    def __extract_extension(files: Iterator[str]) -> str:
         """ Extracting extension in files
         :param files             The list files
         :return extension if the given files has had extensions, in any case, thrown Exception
         """
-        extension_regex = re.compile("[^.]+$")
-        extensions = [extension_regex.findall(file)[0] for file in files]
+        extension_regex = r"[^.]+$"
+        extensions = filter(lambda file: re.search(extension_regex, file).group(), files)
+
         if len(set(extensions)) == 1:
             return extensions[0]
         else:
@@ -47,7 +48,8 @@ class DataFrameUtils(HDFSUtils):
         :return type format if the given path has had files with extensions, in any case, thrown Exception
         """
         content = list(self.get_content(path_name))
-        files = self._filter_files(content)
+        files = filter(lambda file: self._is_file(file), content)
+
         return self.__extract_extension(files)
 
     def __get_format_type(self, path_name: str) -> str:
@@ -76,13 +78,13 @@ class DataFrameUtils(HDFSUtils):
             return path_name
 
     @staticmethod
-    def __concat_path_with_partition_name(date_partitions: List[str], path_name: str) -> List[str]:
+    def __concat_path_with_partition_name(date_partitions: List[str], path_name: str) -> Iterator[str]:
         """ Concatenating path with partition name with date partitions
         :param date_partitions      The date partitions
         :param path_name            The path with partition name
         :return concatenated list
         """
-        return [path_name + process_date for process_date in date_partitions]
+        return map(lambda process_date: path_name + process_date, date_partitions)
 
     def __add_partition_name(self, path_name: str) -> str:
         """ Adding partition name to path
@@ -93,14 +95,16 @@ class DataFrameUtils(HDFSUtils):
             path_name = path_name[:-1]
         return path_name + self.slash + self.partition_name + "="
 
-    def __get_paths_with_process_name(self, path_name: str, **kwargs) -> List[str]:
+    def __get_paths_with_process_name(self, path_name: str, **kwargs) -> Iterator[str]:
         """ Getting paths with partition name
         :param path_name         The path name
         :return paths with partition name
         """
         date_partitions = self.get_date_partitions(path_name, **kwargs)
+
         if date_partitions:
             path_with_partition_name = self.__add_partition_name(path_name)
+
             return self.__concat_path_with_partition_name(date_partitions, path_with_partition_name)
         else:
             return []
