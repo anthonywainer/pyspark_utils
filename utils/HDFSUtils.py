@@ -42,7 +42,7 @@ class HDFSUtils:
         return datetime.strptime(date_string, self.date_format)
 
     def __get_jvm_content(self, path_name: str):
-        """ Getting content from HDFS
+        """ Getting content from HDFS in JVM object
         :param  path_name    The path name
         :return content list found
         """
@@ -107,7 +107,7 @@ class HDFSUtils:
 
         return map(lambda file: self.__get_date(file), date_files)
 
-    def __sort_date_partitions(self, path_name: str) -> List[datetime]:
+    def __sort_date_partitions(self, path_name: str, in_reverse: bool) -> List[datetime]:
         """ Sorting date partitions from HDFS
         :param path_name    The path name
         :return date partitions sorted descending
@@ -117,7 +117,7 @@ class HDFSUtils:
 
         dates = map(lambda file: self.__to_date(file), string_dates)
 
-        return sorted(dates, reverse=True)
+        return sorted(dates, reverse=in_reverse)
 
     def __format_date_partitions(self, date_partitions: Iterator[datetime]) -> List[str]:
         """ Formatting date partitions from process date
@@ -143,10 +143,10 @@ class HDFSUtils:
                                  process_date: object, operation: str) -> List[str]:
         """ Filtering date partitions from process date
         :param date_partitions      The date partitions
-        :return date partitions filtered by process date
+        :return date partitions filtered by process date<
         """
         range_condition = "begin_date <= date <= end_date"
-        date_condition = "{}({}, date)".format(self.operation[operation], "begin_date")
+        date_condition = "{}(date, begin_date)".format(self.operation[operation])
 
         begin_date, end_date = self.__format_process_date(process_date)
         condition = range_condition if end_date is not None else date_condition
@@ -160,16 +160,17 @@ class HDFSUtils:
 
         return list(self.__format_date_partitions(filtered_date_partitions))
 
-    def get_date_partitions(self, path_name: str, process_date: object = None, operation: str = ">=",
-                            partition_number: int = None) -> List[str]:
+    def get_date_partitions(self, path_name: str, process_date: object = None, operation: str = "<=",
+                            partition_number: int = None, in_reverse: bool = True) -> List[str]:
         """ Getting date partitions from HDFS
+        :param in_reverse        The list order
         :param operation         The operation to realize
         :param path_name         The path name
         :param process_date      The process date
         :param partition_number  The partition number
         :return date partitions
         """
-        date_partitions = self.__sort_date_partitions(path_name)
+        date_partitions = self.__sort_date_partitions(path_name, in_reverse)
 
         if process_date is not None:
             return self.__filter_date_partitions(date_partitions, process_date, operation)[: partition_number]
