@@ -29,16 +29,21 @@ class DataFrameUtils(HDFSUtils):
         super().__init__(**kwargs)
 
     @staticmethod
-    def __extract_extension(files: Iterator[str]) -> str:
+    def __search_extension(file: str) -> str:
+        extension_regex = r"[^.]+$"
+        extension = re.search(extension_regex, file)
+        if extension:
+            return extension.group()
+
+    def __extract_extension(self, files: Iterator[str]) -> str:
         """ Extracting extension in files
         :param files             The list files
         :return extension if the given files has had extensions, in any case, thrown Exception
         """
-        extension_regex = r"[^.]+$"
-        extensions = filter(lambda file: re.search(extension_regex, file).group(), files)
+        extensions = set(map(lambda file: self.__search_extension(file), files))
 
-        if len(set(extensions)) == 1:
-            return extensions[0]
+        if len(extensions) == 1:
+            return list(extensions)[0]
         else:
             raise Exception("Extension doesn't recognized!")
 
@@ -47,9 +52,7 @@ class DataFrameUtils(HDFSUtils):
         :param path_name         The path name
         :return type format if the given path has had files with extensions, in any case, thrown Exception
         """
-        content = list(self.get_content(path_name))
-        files = filter(lambda file: self._is_file(file), content)
-
+        files = self.get_files(path_name)
         return self.__extract_extension(files)
 
     def __get_format_type(self, path_name: str) -> str:
@@ -57,7 +60,9 @@ class DataFrameUtils(HDFSUtils):
         :param path_name         The path name
         :return format type for spark
         """
-        return self.format_types_spark[self.get_format_type_from_path(path_name)]
+        format_type = self.get_format_type_from_path(path_name)
+
+        return self.format_types_spark[format_type]
 
     def __extract_path(self, path_name: str = None, paths: List[str] = None) -> str:
         """ Extracting path
@@ -73,18 +78,18 @@ class DataFrameUtils(HDFSUtils):
             return path_name
 
         try:
-            return self.get_folders(path_name)[0]
+            return list(self.get_folders(path_name))[0]
         except IndexError:
             return path_name
 
     @staticmethod
-    def __concat_path_with_partition_name(date_partitions: List[str], path_name: str) -> Iterator[str]:
+    def __concat_path_with_partition_name(date_partitions: List[str], path_name: str) -> List[str]:
         """ Concatenating path with partition name with date partitions
         :param date_partitions      The date partitions
         :param path_name            The path with partition name
         :return concatenated list
         """
-        return map(lambda process_date: path_name + process_date, date_partitions)
+        return list(map(lambda process_date: path_name + process_date, date_partitions))
 
     def __add_partition_name(self, path_name: str) -> str:
         """ Adding partition name to path
@@ -125,6 +130,7 @@ class DataFrameUtils(HDFSUtils):
 
         if path_name is not None:
             paths = [path_name]
+
         return self.spark.read.format(type_format).load(paths, **options)
 
     def read_dataframes(self, path_name: str = None, paths: list = None, options=None, **kwargs) -> DataFrame:

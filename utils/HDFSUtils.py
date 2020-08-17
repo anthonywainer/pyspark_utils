@@ -41,80 +41,90 @@ class HDFSUtils:
         """
         return datetime.strptime(date_string, self.date_format)
 
-    def get_content(self, path_name: str):
-        """ Getting files from HDFS
+    def __get_jvm_content(self, path_name: str):
+        """ Getting content from HDFS
+        :param  path_name    The path name
+        :return content list found
+        """
+
+        return self.__file_system.listStatus(self.__Path(path_name))
+
+    def get_content(self, path_name: str) -> Iterator[str]:
+        """ Getting files converted to string
         :param  path_name    The path name
         :return file list found
         """
-        return self.__file_system.listStatus(self.__Path(path_name))
+        content = self.__get_jvm_content(path_name)
 
-    @staticmethod
-    def _is_file(file) -> str:
-        """ Checking file with extension
-        :param file    The file got from HDFS
-        :return file with extension
+        return self.__to_string_jvm(content)
+
+    def get_files(self, path_name: str) -> Iterator[str]:
+        """ Getting files with extension
+        :param  path_name    The path name
+        :return files with extension
         """
+        content = self.__get_jvm_content(path_name)
 
-        return file.getPath().toString() if file.isFile() and file.getLen() > 0 else False
+        files = filter(lambda file: file.isFile() and file.getLen() > 0, content)
+
+        return self.__to_string_jvm(files)
 
     @staticmethod
-    def __is_folder(file) -> str:
-        """ Checking file is folder
-        :param file    The file got from HDFS
+    def __to_string_jvm(files) -> Iterator[str]:
+        """ Converting string files from HDFS
+        :param files    The file got from HDFS
         :return folder
         """
 
-        return file.getPath().toString() if file.isDirectory() else False
+        return map(lambda file: file.getPath().toString(), files)
 
     def get_folders(self, path_name: str) -> Iterator[str]:
         """ Getting folders from HDFS
         :param  path_name    The path name
         :return folder list found
         """
-        files = self.get_content(path_name)
+        files = self.__get_jvm_content(path_name)
+        folders = filter(lambda file: file.isDirectory(), files)
 
-        return filter(lambda file: self.__is_folder(file), files)
+        return self.__to_string_jvm(folders)
 
-    def __find_date(self, path_name: str) -> str:
-        """ Finding date using regex
+    def __get_date(self, path_name: str) -> str:
+        """ Getting date using regex
           :param path_name    The path name
           :return date in string
         """
         date = re.search(self.date_regex, path_name)
 
-        return date.group() if date else None
-
-    def __get_date(self, path: str) -> str:
-        """ Getting date from file name
-          :param path    The path name
-          :return date in string if partition name is into path
-        """
-        return self.__find_date(path) if self.partition_name in path else False
+        if date:
+            return date.group()
 
     def __filter_dates(self, files) -> Iterator[str]:
         """ filtering date partition in files
         :param files    All files in a path
         :return a list containing only the dates
         """
+        date_files = filter(lambda path: self.partition_name in path, files)
 
-        return filter(lambda file: self.__get_date(file), files)
+        return map(lambda file: self.__get_date(file), date_files)
 
     def __sort_date_partitions(self, path_name: str) -> List[datetime]:
         """ Sorting date partitions from HDFS
         :param path_name    The path name
         :return date partitions sorted descending
         """
-        files = self.get_folders(path_name)
-        filtered_dates = map(lambda file: self.__to_date(file), self.__filter_dates(files))
+        folders = self.get_folders(path_name)
+        string_dates = self.__filter_dates(folders)
 
-        return sorted(filtered_dates, reverse=True)
+        dates = map(lambda file: self.__to_date(file), string_dates)
 
-    def __format_date_partitions(self, date_partitions: Iterator[datetime]) -> Iterator[str]:
+        return sorted(dates, reverse=True)
+
+    def __format_date_partitions(self, date_partitions: Iterator[datetime]) -> List[str]:
         """ Formatting date partitions from process date
         :param date_partitions      The date partitions
         :return date partitions given date format
         """
-        return map(lambda date: date.strftime(self.date_format), date_partitions)
+        return list(map(lambda date: date.strftime(self.date_format), date_partitions))
 
     def __format_process_date(self, process_date: object) -> (datetime, datetime):
         """ Formatting process date
@@ -123,30 +133,35 @@ class HDFSUtils:
 
         if isinstance(process_date, str):
             return self.__to_date(process_date), None
+
         if isinstance(process_date, list) and len(process_date) == 2:
             return self.__to_date(process_date[0]), self.__to_date(process_date[1])
         else:
             raise Exception("Process date incorrect")
 
     def __filter_date_partitions(self, date_partitions: List[datetime],
-                                 process_date: object, operation: str) -> Iterator[str]:
+                                 process_date: object, operation: str) -> List[str]:
         """ Filtering date partitions from process date
         :param date_partitions      The date partitions
         :return date partitions filtered by process date
         """
-
-        global begin_date, end_date
+        range_condition = "begin_date <= date <= end_date"
+        date_condition = "{}({}, date)".format(self.operation[operation], "begin_date")
 
         begin_date, end_date = self.__format_process_date(process_date)
-        sentence = "begin_date <= date <= end_date" if end_date is not None else "{}({}, date)".format(
-            self.operation[operation], "begin_date")
+        condition = range_condition if end_date is not None else date_condition
 
-        filtered_date_partitions = filter(lambda date: eval(sentence), date_partitions)
+        filtered_date_partitions = filter(
+            lambda date: eval(condition,
+                              {"date": date, "begin_date": begin_date,
+                               "end_date": end_date, "operator": operator}),
+            date_partitions
+        )
 
-        return self.__format_date_partitions(filtered_date_partitions)
+        return list(self.__format_date_partitions(filtered_date_partitions))
 
     def get_date_partitions(self, path_name: str, process_date: object = None, operation: str = ">=",
-                            partition_number: int = None) -> Iterator[str]:
+                            partition_number: int = None) -> List[str]:
         """ Getting date partitions from HDFS
         :param operation         The operation to realize
         :param path_name         The path name
